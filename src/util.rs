@@ -14,10 +14,17 @@ lazy_static! {
         Regex::new(r#"This reverts commit ([0-9a-f]+)"#).unwrap();
 }
 
+#[derive(Eq, PartialEq, Debug, Copy, Clone, Ord, PartialOrd)]
+pub enum RefType {
+    Note,
+    Fix,
+    Revert,
+}
+
 pub struct RefEntry {
     pub hash: String,
     pub title: String,
-    pub blame: bool,
+    pub ref_type: RefType,
 }
 
 pub fn extract_revert(commit: &Commit) -> Option<RefEntry> {
@@ -26,7 +33,7 @@ pub fn extract_revert(commit: &Commit) -> Option<RefEntry> {
     Some(RefEntry {
         hash: hash_capture[1].to_string(),
         title: header_capture[1].to_string(),
-        blame: true,
+        ref_type: RefType::Revert,
     })
 }
 
@@ -37,10 +44,14 @@ pub fn extract_references(commit: &Commit) -> Vec<RefEntry> {
     commit_ref_regex
         .captures_iter(&flatten_msg)
         .map(|captured| {
-            let fixed = captured.get(1).is_some();
+            let ref_type = if captured.get(1).is_some() {
+                RefType::Fix
+            } else {
+                RefType::Note
+            };
             let hash = captured[2].to_string();
             let title = captured[3].to_string();
-            RefEntry { hash, title, blame: fixed }
+            RefEntry { hash, title, ref_type }
         })
         .chain(extract_revert(commit))
         .collect()

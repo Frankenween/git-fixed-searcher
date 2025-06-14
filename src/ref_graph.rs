@@ -1,11 +1,12 @@
 use std::cell::RefCell;
+use std::cmp::max;
 use std::collections::HashMap;
 use git2::{Error, Oid, Repository};
 use log::{error, info, warn};
-use crate::util::{extract_references, get_commit_by_ref_entry};
+use crate::util::{extract_references, get_commit_by_ref_entry, RefType};
 
 pub struct RefGraph {
-    referenced_by: Vec<Vec<usize>>,
+    referenced_by: Vec<Vec<(usize, RefType)>>,
     hash_to_id: HashMap<Oid, usize>,
     id_to_hash: Vec<Oid>,
     // DFS internal info
@@ -25,6 +26,7 @@ impl RefGraph {
         };
         for oid in commits.flatten() {
             let id = graph.lookup_or_alloc(&oid);
+            let mut added_edges: Vec<(usize, RefType)> = vec![];
             for referenced in extract_references(&repo.find_commit(oid).unwrap()) {
                 let Some(ref_commit) = get_commit_by_ref_entry(repo, &referenced) else {
                     error!(
@@ -42,10 +44,20 @@ impl RefGraph {
                     );
                     continue;
                 };
-                graph.referenced_by[ref_id].push(id);
-                info!("Adding ref: {ref_id} -> {id}");
+                if let Some(idx) = added_edges
+                    .iter()
+                    .position(|x| x.0 == ref_id) {
+                    added_edges[idx].1 = max(added_edges[idx].1, referenced.ref_type);
+                } else {
+                    added_edges.push((ref_id, referenced.ref_type));
+                }
+            }
+            for (ref_id, t) in added_edges {
+                graph.referenced_by[ref_id].push((id, t));
+                info!("Adding ref: {ref_id} -> {id}, type {:?}", t);
             }
         }
+        
         graph
     }
 
@@ -74,7 +86,7 @@ impl RefGraph {
         visited[v] = *flag;
 
         while let Some(v) = dfs.pop() {
-            for &u in &self.referenced_by[v] {
+            for &(u, _) in &self.referenced_by[v] {
                 if visited[u] != *flag {
                     dfs.push(u);
                     // To ignore the starting node
@@ -109,7 +121,7 @@ impl RefGraph {
                 info!("Commit {oid} (\"{}\") is not mentioned anywhere", 
                     repo.find_commit(*oid).unwrap().summary().unwrap());
             } else {
-                warn!("Found references of commit {oid} (\"{}\")", 
+                info!("Found references of commit {oid} (\"{}\")", 
                     repo.find_commit(*oid).unwrap().summary().unwrap());
                 for ref_oid in referenced_by {
                     warn!("  {ref_oid} (\"{}\")", 
