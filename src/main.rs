@@ -49,10 +49,7 @@ fn read_commits<'a>(args: &Args, repo: &'a Repository, commit_list: &'a [Commit<
     
     lines
         .iter()
-        .flat_map(|line| {
-            println!("Processing {}", line);
-            parse_commit_description(line, repo, commit_list, &title_mapping)
-        })
+        .flat_map(|line| parse_commit_description(line, repo, commit_list, &title_mapping))
         .collect()
 }
 

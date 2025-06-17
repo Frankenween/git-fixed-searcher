@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
 use git2::{Commit, Error, Oid, Repository};
-use log::{error, info, warn};
+use log::{debug, info, warn};
 use crate::util::{extract_references, get_commit_by_ref_entry, RefType};
 
 pub struct RefGraph {
@@ -29,7 +29,7 @@ impl RefGraph {
             let mut added_edges: Vec<(usize, RefType)> = vec![];
             for referenced in extract_references(&repo.find_commit(oid).unwrap()) {
                 let Some(ref_commit) = get_commit_by_ref_entry(repo, &referenced) else {
-                    error!(
+                    warn!(
                         "Commit {} references a commit that cannot be found!\n\
                         Hash: {}\n\
                         Title: {}",
@@ -37,7 +37,7 @@ impl RefGraph {
                     continue;
                 };
                 let Some(ref_id) = graph.lookup(&ref_commit.id()) else {
-                    warn!(
+                    info!(
                         "Commit {} references a commit {}, that has not been observed.\n\
                         It is outside the search region or the commit order is wrong.",
                         oid, ref_commit.id()
@@ -54,7 +54,7 @@ impl RefGraph {
             }
             for (ref_id, t) in added_edges {
                 graph.referenced_by[ref_id].push((id, t));
-                info!("Adding ref: {ref_id} -> {id}, type {:?}", t);
+                debug!("Adding ref: {ref_id} -> {id}, type {:?}", t);
             }
         }
         
@@ -107,7 +107,7 @@ impl RefGraph {
 
     pub fn get_references(&self, oid: Oid) -> Vec<Oid> {
         let Some(v) = self.lookup(&oid) else {
-            warn!("Commit with hash {} not found, someone may still blame it", oid);
+            info!("Commit with hash {} not found, someone may still blame it", oid);
             return vec![];
         };
         self.get_references_by_id(v)
@@ -118,13 +118,13 @@ impl RefGraph {
             let oid = &self.id_to_hash[i];
             let referenced_by = self.get_references_by_id(i);
             if referenced_by.is_empty() {
-                info!("Commit {oid} (\"{}\") is not mentioned anywhere", 
+                println!("Commit {oid} (\"{}\") is not mentioned anywhere", 
                     repo.find_commit(*oid).unwrap().summary().unwrap_or("<no summary>"));
             } else {
-                info!("Found references of commit {oid} (\"{}\")", 
+                println!("Found references of commit {oid} (\"{}\")", 
                     repo.find_commit(*oid).unwrap().summary().unwrap_or("<no summary>"));
                 for ref_oid in referenced_by {
-                    warn!("  {ref_oid} (\"{}\")", 
+                    println!("  {ref_oid} (\"{}\")", 
                         repo.find_commit(ref_oid).unwrap().summary().unwrap_or("<no summary>"));
                 }
             }

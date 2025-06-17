@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use git2::{Commit, Repository};
 use lazy_static::lazy_static;
-use log::warn;
+use log::{info, warn};
 use regex::Regex;
 
 lazy_static! {
@@ -66,7 +66,7 @@ pub fn get_commit_by_ref_entry<'a>(repo: &'a Repository, ref_entry: &RefEntry) -
     let found = repo.find_commit_by_prefix(&ref_entry.hash).ok();
     found.inspect(|commit| {
         if commit.summary().is_none() || ref_entry.title != commit.summary().unwrap() {
-            warn!("\
+            info!("\
             Found commit with same hash but different title!\n\
             Real hash: {}, entry hash {}\n\
             Real title: {}\n\
@@ -92,7 +92,7 @@ fn check_commit_titles(real_title: &str, got_title: &str, verbose: bool) -> bool
         true
     } else if got_title.contains(real_title) || real_title.contains(got_title) {
         if verbose {
-            warn!(
+            info!(
                 "Titles look similar, but not equal\n\
                 Commit title: {}\n\
                 Checking title: {}",
@@ -102,7 +102,7 @@ fn check_commit_titles(real_title: &str, got_title: &str, verbose: bool) -> bool
         true
     } else {
         if verbose {
-            warn!(
+            info!(
                 "Huge title mismatch\n\
                 Commit title: {}\n\
                 Checking title: {}",
@@ -135,7 +135,7 @@ pub fn parse_commit_description<'a>(
         if let Ok(commit) = repo.find_commit_by_prefix(line) {
             Some(commit)
         } else {
-            warn!("Commit with hash {line} was not found in repository");
+            warn!("Commit with title {line} was not found in repository");
             None
         }
     } else {
