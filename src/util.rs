@@ -27,6 +27,12 @@ pub enum RefType {
     Revert,
 }
 
+impl RefType {
+    pub fn should_follow(&self, no_notice:  bool) -> bool {
+        !no_notice || self >= &Self::Fix
+    }
+}
+
 pub struct RefEntry {
     pub hash: String,
     pub title: String,

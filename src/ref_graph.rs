@@ -76,7 +76,7 @@ impl RefGraph {
         })
     }
     
-    fn dfs(&self, v: usize) -> Vec<usize> {
+    fn dfs(&self, v: usize, no_notices: bool) -> Vec<usize> {
         let mut dfs = vec![v];
         let mut result = vec![];
         let mut flag = self.flag.borrow_mut();
@@ -86,8 +86,8 @@ impl RefGraph {
         visited[v] = *flag;
 
         while let Some(v) = dfs.pop() {
-            for &(u, _) in &self.referenced_by[v] {
-                if visited[u] != *flag {
+            for &(u, t) in &self.referenced_by[v] {
+                if visited[u] != *flag && t.should_follow(no_notices) {
                     dfs.push(u);
                     // To ignore the starting node
                     result.push(u);
@@ -98,25 +98,25 @@ impl RefGraph {
         result
     }
     
-    fn get_references_by_id(&self, v: usize) -> Vec<Oid> {
-        self.dfs(v)
+    fn get_references_by_id(&self, v: usize, no_notices: bool) -> Vec<Oid> {
+        self.dfs(v, no_notices)
             .iter()
             .map(|&u| self.id_to_hash[u])
             .collect()
     }
 
-    pub fn get_references(&self, oid: Oid) -> Vec<Oid> {
+    pub fn get_references(&self, oid: Oid, no_notices: bool) -> Vec<Oid> {
         let Some(v) = self.lookup(&oid) else {
             info!("Commit with hash {} not found, someone may still blame it", oid);
             return vec![];
         };
-        self.get_references_by_id(v)
+        self.get_references_by_id(v, no_notices)
     }
     
-    pub fn dump_info(&self, repo: &Repository) {
+    pub fn dump_info(&self, repo: &Repository, no_notices: bool) {
         for i in 0..self.referenced_by.len() {
             let oid = &self.id_to_hash[i];
-            let referenced_by = self.get_references_by_id(i);
+            let referenced_by = self.get_references_by_id(i, no_notices);
             if referenced_by.is_empty() {
                 println!("Commit {oid} (\"{}\") is not mentioned anywhere", 
                     repo.find_commit(*oid).unwrap().summary().unwrap_or("<no summary>"));

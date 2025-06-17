@@ -32,6 +32,10 @@ struct Args {
     /// Read commits from a file instead of stdin
     #[clap(long, requires = "check-mode")]
     commits: Option<PathBuf>,
+    
+    /// Follow "Fixes:" tags and reverts
+    #[clap(long)]
+    no_notices: bool,
 }
 
 fn read_commits<'a>(args: &Args, repo: &'a Repository, commit_list: &'a [Commit<'a>]) -> Vec<Commit<'a>> {
@@ -89,7 +93,7 @@ fn main() {
             .map(Commit::id)
             .collect::<HashSet<_>>();
         for commit in &commits {
-            let fixed: Vec<Oid> = ref_graph.get_references(commit.id())
+            let fixed: Vec<Oid> = ref_graph.get_references(commit.id(), args.no_notices)
                 .into_iter()
                 .filter(|oid| !have_commits.contains(oid))
                 .collect();
@@ -112,6 +116,6 @@ fn main() {
             }
         }
     } else {
-        ref_graph.dump_info(&repo);
+        ref_graph.dump_info(&repo, args.no_notices);
     }
 }
