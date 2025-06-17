@@ -92,6 +92,8 @@ fn main() {
             .iter()
             .map(Commit::id)
             .collect::<HashSet<_>>();
+        let mut found_new_commits: HashSet<Oid> = HashSet::new();
+        
         for commit in &commits {
             let fixed: Vec<Oid> = ref_graph.get_references(commit.id(), args.no_notices)
                 .into_iter()
@@ -114,7 +116,9 @@ fn main() {
                     )
                 }
             }
+            found_new_commits.extend(fixed.into_iter());
         }
+        println!("Summary: found {} probably missing commits", found_new_commits.len());
     } else {
         ref_graph.dump_info(&repo, args.no_notices);
     }
