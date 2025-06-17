@@ -1,10 +1,14 @@
 mod util;
 mod ref_graph;
 
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io;
 use std::path::PathBuf;
 use clap::Parser;
-use git2::{Repository, Revwalk, Sort};
+use git2::{Commit, Oid, Repository, Revwalk, Sort};
 use crate::ref_graph::RefGraph;
+use crate::util::{parse_commit_description, read_lines_from_bufreader};
 
 #[derive(Parser)]
 #[clap(about)]
@@ -21,6 +25,35 @@ struct Args {
     #[clap(long)]
     last_commit: Option<String>,
 
+    /// Print summary results for the listed commits only
+    #[clap(short, long, group = "check-mode")]
+    check_commits: bool,
+    
+    /// Read commits from a file instead of stdin
+    #[clap(long, requires = "check-mode")]
+    commits: Option<PathBuf>,
+}
+
+fn read_commits<'a>(args: &Args, repo: &'a Repository, commit_list: &'a [Commit<'a>]) -> Vec<Commit<'a>> {
+    let lines = if let Some(path) = &args.commits {
+        read_lines_from_bufreader(File::open(path).unwrap())
+    } else {
+        read_lines_from_bufreader(io::stdin())
+    };
+    
+    let title_mapping = commit_list
+        .iter()
+        .enumerate()
+        .map(|(idx, commit)| (commit.summary().unwrap_or("<no title>"), idx))
+        .collect::<HashMap<_, _>>();
+    
+    lines
+        .iter()
+        .flat_map(|line| {
+            println!("Processing {}", line);
+            parse_commit_description(line, repo, commit_list, &title_mapping)
+        })
+        .collect()
 }
 
 fn configure_walk<'a>(repo: &'a Repository, args: &Args) -> Revwalk<'a> {
@@ -50,5 +83,38 @@ fn main() {
 
     let walker = configure_walk(&repo, &args);
     let ref_graph = RefGraph::new(&repo, walker.into_iter());
-    ref_graph.dump_info(&repo);
+    
+    if args.check_commits {
+        let inspected_commits = ref_graph.get_commits(&repo);
+        let commits = read_commits(&args, &repo, &inspected_commits);
+        let have_commits = commits
+            .iter()
+            .map(Commit::id)
+            .collect::<HashSet<_>>();
+        for commit in &commits {
+            let fixed: Vec<Oid> = ref_graph.get_references(commit.id())
+                .into_iter()
+                .filter(|oid| !have_commits.contains(oid))
+                .collect();
+            if !fixed.is_empty() {
+                println!(
+                    "Commit {} (\"{}\") has the following references (maybe indirect):",
+                    commit.id(),
+                    commit.summary().unwrap_or("<no title>")
+                );
+                for reference in &fixed {
+                    println!(
+                        "    {} (\"{}\")", 
+                        reference, 
+                        repo.find_commit(*reference)
+                            .unwrap()
+                            .summary()
+                            .unwrap_or("<no summary>"),
+                    )
+                }
+            }
+        }
+    } else {
+        ref_graph.dump_info(&repo);
+    }
 }

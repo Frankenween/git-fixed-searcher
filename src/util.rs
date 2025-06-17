@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read};
 use git2::{Commit, Repository};
 use lazy_static::lazy_static;
 use log::warn;
@@ -12,6 +14,10 @@ lazy_static! {
         Regex::new(r#"Revert "([^"]+)""#).unwrap();
     static ref revert_hash: Regex =
         Regex::new(r#"This reverts commit ([0-9a-f]+)"#).unwrap();
+    static ref config_hash_and_msg: Regex =
+        Regex::new(r#"([0-9a-f]{8,}) ?\("([^"]+)"\)""#).unwrap();
+    static ref config_hash: Regex =
+        Regex::new(r"[0-9a-f]{8,}").unwrap();
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone, Ord, PartialOrd)]
@@ -38,7 +44,6 @@ pub fn extract_revert(commit: &Commit) -> Option<RefEntry> {
 }
 
 pub fn extract_references(commit: &Commit) -> Vec<RefEntry> {
-    // TODO: return unique references
     // New lines can happen inside commit refs
     let flatten_msg = commit.message().unwrap().replace("\n", " ");
     commit_ref_regex
@@ -66,7 +71,89 @@ pub fn get_commit_by_ref_entry<'a>(repo: &'a Repository, ref_entry: &RefEntry) -
             Real hash: {}, entry hash {}\n\
             Real title: {}\n\
             Entry title: {}\
-            ", commit.id(), ref_entry.hash, commit.summary().unwrap_or("None"), ref_entry.title);
+            ", commit.id(), ref_entry.hash, commit.summary().unwrap_or("<no summary>"), ref_entry.title);
         }
     })
+}
+
+pub fn read_lines_from_bufreader(reader: impl Read) -> Vec<String> {
+    BufReader::new(reader)
+        .lines()
+        .map_while(Result::ok)
+        .map(|s| s.trim().to_string())
+        .collect::<Vec<_>>()
+}
+
+/// Check that two titles are sort of the same
+/// Return true if `real_title` is a substring of `got_title` or vice versa
+/// If they are not equal, log a warning
+fn check_commit_titles(real_title: &str, got_title: &str, verbose: bool) -> bool {
+    if real_title == got_title {
+        true
+    } else if got_title.contains(real_title) || real_title.contains(got_title) {
+        if verbose {
+            warn!(
+                "Titles look similar, but not equal\n\
+                Commit title: {}\n\
+                Checking title: {}",
+                real_title, got_title
+            );
+        }
+        true
+    } else {
+        if verbose {
+            warn!(
+                "Huge title mismatch\n\
+                Commit title: {}\n\
+                Checking title: {}",
+                real_title, got_title
+            );
+        }
+        false
+    }
+}
+
+pub fn parse_commit_description<'a>(
+    line: &str, 
+    repo: &'a Repository, 
+    commit_list: &[Commit<'a>],
+    title_mapping: &HashMap<&'a str, usize>,
+) -> Option<Commit<'a>> {
+    if let Some(cap) = config_hash_and_msg.captures(line) {
+        let hash = cap.get(1).unwrap().as_str();
+        let title = cap.get(2).unwrap().as_str();
+        // Verify that hash is valid
+        if let Ok(commit) = repo.find_commit_by_prefix(hash) {
+            // Verify that message is sane
+            check_commit_titles(commit.summary().unwrap_or("<no summary>"), title, true);
+            Some(commit)
+        } else {
+            warn!("Commit with hash {hash} was not found in repository");
+            None
+        }
+    } else if config_hash.is_match(line) {
+        if let Ok(commit) = repo.find_commit_by_prefix(line) {
+            Some(commit)
+        } else {
+            warn!("Commit with hash {line} was not found in repository");
+            None
+        }
+    } else {
+        // It is a commit description, check if there is exactly the same title
+        // If no - iterate over all and check(Aho-Corasick algorithm would be nice here)
+        if let Some(idx) = title_mapping.get(line) {
+            return Some(commit_list[*idx].clone());
+        }
+        commit_list
+            .iter()
+            .find_map(|commit|
+                if commit.summary().is_some_and(|s| 
+                    check_commit_titles(s, line, false) || check_commit_titles(line, s, false)
+                ) {
+                    Some(commit.clone())
+                } else {
+                    None
+                }
+            )
+    }
 }

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
-use git2::{Error, Oid, Repository};
+use git2::{Commit, Error, Oid, Repository};
 use log::{error, info, warn};
 use crate::util::{extract_references, get_commit_by_ref_entry, RefType};
 
@@ -30,8 +30,8 @@ impl RefGraph {
             for referenced in extract_references(&repo.find_commit(oid).unwrap()) {
                 let Some(ref_commit) = get_commit_by_ref_entry(repo, &referenced) else {
                     error!(
-                        "Commit {} references a commit that cannot be found!\n
-                        Hash: {}\n
+                        "Commit {} references a commit that cannot be found!\n\
+                        Hash: {}\n\
                         Title: {}",
                         oid, referenced.hash, referenced.title);
                     continue;
@@ -119,15 +119,26 @@ impl RefGraph {
             let referenced_by = self.get_references_by_id(i);
             if referenced_by.is_empty() {
                 info!("Commit {oid} (\"{}\") is not mentioned anywhere", 
-                    repo.find_commit(*oid).unwrap().summary().unwrap());
+                    repo.find_commit(*oid).unwrap().summary().unwrap_or("<no summary>"));
             } else {
                 info!("Found references of commit {oid} (\"{}\")", 
-                    repo.find_commit(*oid).unwrap().summary().unwrap());
+                    repo.find_commit(*oid).unwrap().summary().unwrap_or("<no summary>"));
                 for ref_oid in referenced_by {
                     warn!("  {ref_oid} (\"{}\")", 
-                        repo.find_commit(ref_oid).unwrap().summary().unwrap());
+                        repo.find_commit(ref_oid).unwrap().summary().unwrap_or("<no summary>"));
                 }
             }
         }
+    }
+    
+    pub fn get_oids(&self) -> &[Oid] {
+        &self.id_to_hash
+    }
+    
+    pub fn get_commits<'a>(&self, repo: &'a Repository) -> Vec<Commit<'a>> {
+        self.get_oids()
+            .iter()
+            .flat_map(|&oid| repo.find_commit(oid).ok())
+            .collect()
     }
 }
