@@ -5,6 +5,10 @@ use git2::{Commit, Error, Oid, Repository};
 use log::{debug, info, warn};
 use crate::util::{extract_references, get_commit_by_ref_entry, RefType};
 
+/// A graph showing relations between git commits.
+/// 
+/// Every node is a commit in a repository.
+/// An edge A -> B shows that commit B has a reference to A.
 pub struct RefGraph {
     referenced_by: Vec<Vec<(usize, RefType)>>,
     hash_to_id: HashMap<Oid, usize>,
@@ -15,7 +19,10 @@ pub struct RefGraph {
 }
 
 impl RefGraph {
-    // Commits should go in a commit order - from oldest to newest one
+    /// Create a reference tree from a list of commits.
+    /// 
+    /// Commits should go in a history order - from oldest to newest one.
+    /// Otherwise, there will be no references.
     pub fn new(repo: &Repository, commits: impl Iterator<Item=Result<Oid, Error>>) -> RefGraph {
         let mut graph = RefGraph {
             referenced_by: vec![],
@@ -61,10 +68,12 @@ impl RefGraph {
         graph
     }
 
+    /// Check if such hash has a node id and return it.
     fn lookup(&self, oid: &Oid) -> Option<usize> {
         self.hash_to_id.get(oid).cloned()
     }
 
+    /// Get node id or create a new one.
     fn lookup_or_alloc(&mut self, oid: &Oid) -> usize {
         self.lookup(oid).unwrap_or_else(|| {
             let id = self.id_to_hash.len();
@@ -76,6 +85,9 @@ impl RefGraph {
         })
     }
     
+    /// Run a depth-first search from node with index v.
+    /// 
+    /// If `no_notices` is true, only "revert" and "fixed" references will be used.
     fn dfs(&self, v: usize, no_notices: bool) -> Vec<usize> {
         let mut dfs = vec![v];
         let mut result = vec![];
@@ -97,7 +109,7 @@ impl RefGraph {
         }
         result
     }
-    
+
     fn get_references_by_id(&self, v: usize, no_notices: bool) -> Vec<Oid> {
         self.dfs(v, no_notices)
             .iter()
@@ -105,6 +117,9 @@ impl RefGraph {
             .collect()
     }
 
+    /// Get hashes of commits that reference `oid` directly or indirectly.
+    /// 
+    /// If `no_notices` is true, only "revert" and "fixed" references will be used.
     pub fn get_references(&self, oid: Oid, no_notices: bool) -> Vec<Oid> {
         let Some(v) = self.lookup(&oid) else {
             info!("Commit with hash {} not found, someone may still blame it", oid);
@@ -112,7 +127,8 @@ impl RefGraph {
         };
         self.get_references_by_id(v, no_notices)
     }
-    
+
+    /// Print summary for all provided commits.
     pub fn dump_info(&self, repo: &Repository, no_notices: bool) {
         for i in 0..self.referenced_by.len() {
             let oid = &self.id_to_hash[i];
@@ -130,11 +146,12 @@ impl RefGraph {
             }
         }
     }
-    
+
+    /// Get commit hashes that are used in a graph.
     pub fn get_oids(&self) -> &[Oid] {
         &self.id_to_hash
     }
-    
+
     pub fn get_commits<'a>(&self, repo: &'a Repository) -> Vec<Commit<'a>> {
         self.get_oids()
             .iter()

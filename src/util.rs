@@ -34,11 +34,14 @@ impl RefType {
 }
 
 pub struct RefEntry {
+    /// Reference hash, probably partial one
     pub hash: String,
     pub title: String,
     pub ref_type: RefType,
 }
 
+/// Check if this commits looks like a revert one.
+/// If so, fill `RefEntry` with original commit hash and title.
 pub fn extract_revert(commit: &Commit) -> Option<RefEntry> {
     let header_capture = revert_header.captures(commit.summary()?)?;
     let hash_capture = revert_hash.captures(commit.message()?)?;
@@ -68,6 +71,7 @@ pub fn extract_references(commit: &Commit) -> Vec<RefEntry> {
         .collect()
 }
 
+/// Find the closest commit to the given `RefEntry` in a repository.
 pub fn get_commit_by_ref_entry<'a>(repo: &'a Repository, ref_entry: &RefEntry) -> Option<Commit<'a>> {
     let found = repo.find_commit_by_prefix(&ref_entry.hash).ok();
     found.inspect(|commit| {
@@ -90,9 +94,10 @@ pub fn read_lines_from_bufreader(reader: impl Read) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
-/// Check that two titles are sort of the same
-/// Return true if `real_title` is a substring of `got_title` or vice versa
-/// If they are not equal, log a warning
+/// Check that two titles are sort of the same.
+/// 
+/// Return true if `real_title` is a substring of `got_title` or vice versa.
+/// If they are not equal, log a warning.
 fn check_commit_titles(real_title: &str, got_title: &str, verbose: bool) -> bool {
     if real_title == got_title {
         true
@@ -119,6 +124,24 @@ fn check_commit_titles(real_title: &str, got_title: &str, verbose: bool) -> bool
     }
 }
 
+/// Parse a config line and find a matching commit in a repository
+/// 
+/// `commit_list` is a list of inspected commits, and `title_mapping` maps commit
+/// titles to their indices in `commit_list`.
+/// 
+/// There are several supported formats:
+/// 1. \<hash\>("\<title\>")?
+/// 
+///    Commit is looked up using hash.
+///    If the title doesn't match, a warning will be printed.
+///    The search is performed through all commits in a repository.
+/// 2. \<title\>
+/// 
+///    Commit is looked up using title.
+///    If this title is in `title_mapping` cache, it is returned immediately.
+///    Otherwise, a linear search through `commit_list` is performed.
+/// 
+/// Hash string is expected to be at least 8 symbols.
 pub fn parse_commit_description<'a>(
     line: &str, 
     repo: &'a Repository, 
